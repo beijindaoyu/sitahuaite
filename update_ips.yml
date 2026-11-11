@@ -1,0 +1,101 @@
+name: BlueEyes Weekly Secure CF Optimizer
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly: Monday 04:17 UTC.
+    - cron: "17 4 * * 1"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: blueeyes-weekly-ip-refresh
+  cancel-in-progress: false
+
+jobs:
+  optimize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check "requests>=2.32,<3"
+
+      - name: Validate required secrets
+        env:
+          U: ${{ secrets.U }}
+          H: ${{ secrets.H }}
+          P: ${{ secrets.P }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$U"
+          test -n "$H"
+          test -n "$P"
+          echo "Required secrets are present; values are not displayed."
+
+      - name: Compile and run optimizer
+        env:
+          U: ${{ secrets.U }}
+          H: ${{ secrets.H }}
+          P: ${{ secrets.P }}
+          US_TOP_N: "25"
+          HK_TOP_N: "20"
+          GLOBAL_DISCOVERY_MAX: "500"
+          HK_DISCOVERY_MAX: "600"
+          GLOBAL_SOURCE_MAX: "300"
+          HK_SOURCE_MAX: "300"
+          US_DEEP_POOL: "80"
+          HK_DEEP_POOL: "140"
+          ASIA_DEEP_POOL: "140"
+          SAMPLES_PER_CIDR: "28"
+          STABILITY_ROUNDS: "3"
+          CHECK_WORKERS: "3"
+          CHECK_TIMEOUT: "4.0"
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/get_best_cf.py
+          python scripts/get_best_cf.py
+
+      # Never expose a credential-bearing subscription from a public repository.
+      - name: Upload subscription artifact (private repositories only)
+        if: ${{ github.event.repository.private == true }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: blueeyes-subscription
+          path: results/sub.txt
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Skip subscription artifact for public repository
+        if: ${{ github.event.repository.private != true }}
+        run: echo "Public repository: credential-bearing subscription artifact is not uploaded."
+
+      - name: Commit public IP measurements only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -f --cached results/sub.txt 2>/dev/null || true
+          git add results/us.txt results/hk.txt results/asia.txt results/best-cf-ips.txt results/best-cf-ips.json
+          if git diff --cached --quiet; then
+            echo "No public measurement changes."
+          else
+            git commit -m "Update weekly Cloudflare IP measurements"
+            git push
+          fi

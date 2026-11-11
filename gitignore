@@ -1,0 +1,8 @@
+# Credential-bearing subscription must never be committed.
+results/sub.txt
+results/sub.txt.*
+
+# Python runtime files
+__pycache__/
+*.py[cod]
+.pytest_cache/
