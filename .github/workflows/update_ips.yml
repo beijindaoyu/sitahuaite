@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   schedule:
     # Weekly: Monday 04:17 UTC.
-    - cron: "0 1 * * * "
+    - cron: "0 1 * * *"
 
 permissions:
   contents: write
